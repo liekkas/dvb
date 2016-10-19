@@ -1,5 +1,8 @@
 package com.citic.guoan.dvb
 
+import java.io.File
+
+import org.apache.commons.io.FileUtils
 import org.apache.spark.sql.SQLContext
 import org.apache.spark.{SparkConf, SparkContext}
 import redis.clients.jedis.Jedis
@@ -12,9 +15,13 @@ object DemandByWeek {
   case class SHOW_TYPE(show_name:String,show_type:String)
 
   def main(args: Array[String]): Unit = {
+    val summaryWFile = new File(args(2) + File.separator + "T_USER_SUMMARY_W")
+    val demandWFile = new File(args(2) + File.separator + "T_DEMAND_BROADCAST_W")
+    val demandShowsWFile = new File(args(2) + File.separator + "T_DEMAND_BROADCAST_SHOWS_W")
+
     val USER_INDEX_OFFSET = 1000
     //计算中间结果先放到redis中,最后一并导出文本
-    val jedis = new Jedis("localhost")
+//    val jedis = new Jedis("localhost")
     val conf = new SparkConf().setMaster("local").setAppName("demandByWeek")
     val sc = new SparkContext(conf)
     sc.setLogLevel("WARN")
@@ -22,14 +29,9 @@ object DemandByWeek {
     import sqlContext.implicits._
     val data = sc.textFile(args(0))
       .map(_.split("	")).filter(p => p(9).toInt > 201612) //过滤掉用不着的数据
-      .map(p => DEMAND_DATA(p(0),p(9).toInt,p(3).toLong,p(6))).toDF()
-    data.registerTempTable("demand_origin_temp")
-    data.show()
-
+      .map(p => DEMAND_DATA(p(0),p(9).toInt,p(3).toLong,p(6))).toDF().cache()
     val showDict = sc.textFile(args(1))
-      .map(_.split("	")).map ( p =>  SHOW_TYPE(p(0),p(1))).toDF()
-    showDict.registerTempTable("show_dict")
-
+      .map(_.split("	")).map ( p =>  SHOW_TYPE(p(0),p(1))).toDF().cache()
     //加入节目类型 -- 这块比较耗时,如果原始数据能提供更好
     data.join(showDict, data("channel_name")===showDict("show_name"), "left")
         .select("uid","week","remain_time","channel_name","show_type")
@@ -101,16 +103,17 @@ object DemandByWeek {
         val requestOne = remainTime / requestTimes
 
         val summary = week + "\t" + 2 + "\t" + userNum + "\t" + coverPct + "\t" + userIncreasePct + "\t" + userInNum + "\t" +
-          userOutNum + "\t" + remainTime + "\t" + timeUseAVG + "\t" + requestTimes + "\t" + requestAVG + "\t" + requestOne
+          userOutNum + "\t" + remainTime + "\t" + timeUseAVG + "\t" + requestTimes + "\t" + requestAVG + "\t" + requestOne+"\n"
 
-        jedis.sadd("SUMMARY_W", summary)
+//        jedis.sadd("SUMMARY_W", summary)
+        FileUtils.writeStringToFile(summaryWFile,summary,true)
         println(">>> Complete SummaryW:"+summary)
 
         //点播频道类型
         val allShow = sqlContext.sql("select sum(shownum) " +
           "from demand_show_type t where t.week=" + week).first()
         val allShowNum = allShow.getLong(0) //所有的节目数量
-        val FIX_TIME = 60 * 24 * 30
+        val FIX_TIME = 60 * 24 * 7
 
         //电影类
         val movieDF = sqlContext.sql("select shownum, remain_time, usernum " +
@@ -127,8 +130,9 @@ object DemandByWeek {
           val movieShowRatio = movieNum * 1.0 / allShowNum
 
           val demandMovie = week + "\t" + "电影" + "\t" + movieUserIndex + "\t" + movieCoverPct + "\t" + movieMarketPct + "\t" +
-            movieTimeUseAVG + "\t" + movieRemainTime + "\t" + movieUserNum + "\t" + movieShowRatio + "\t" + remainTime + "\t" + userNum
-          jedis.sadd("DEMAND_W", demandMovie)
+            movieTimeUseAVG + "\t" + movieRemainTime + "\t" + movieUserNum + "\t" + movieShowRatio + "\t" + remainTime + "\t" + userNum+"\n"
+//          jedis.sadd("DEMAND_W", demandMovie)
+          FileUtils.writeStringToFile(demandWFile,demandMovie,true)
           println(">>> Complete demandW_movie:" + demandMovie)
         }
 
@@ -147,8 +151,9 @@ object DemandByWeek {
           val tvShowRatio = tvNum * 1.0 / allShowNum
 
           val demandTv = week + "\t" + "电视剧" + "\t" + tvUserIndex + "\t" + tvCoverPct + "\t" + tvMarketPct + "\t" +
-            tvTimeUseAVG + "\t" + tvRemainTime + "\t" + tvUserNum + "\t" + tvShowRatio + "\t" + remainTime + "\t" + userNum
-          jedis.sadd("DEMAND_W", demandTv)
+            tvTimeUseAVG + "\t" + tvRemainTime + "\t" + tvUserNum + "\t" + tvShowRatio + "\t" + remainTime + "\t" + userNum+"\n"
+//          jedis.sadd("DEMAND_W", demandTv)
+          FileUtils.writeStringToFile(demandWFile,demandTv,true)
           println(">>> Complete demandW_tv:" + demandTv)
         }
 
@@ -167,8 +172,9 @@ object DemandByWeek {
             val showTimeUseAVG = showRemainTime / showUserNum
 
             val demandShow = week+"\t"+showName+"\t"+showType+"\t"+showUserIndex+"\t"+showCoverPct+"\t"+showMarketPct+"\t" +
-              showTimeUseAVG+"\t"+showRemainTime+"\t"+showUserNum+"\t"+remainTime+"\t"+userNum
-            jedis.sadd("DEMAND_SHOWS_W", demandShow)
+              showTimeUseAVG+"\t"+showRemainTime+"\t"+showUserNum+"\t"+remainTime+"\t"+userNum+"\n"
+//            jedis.sadd("DEMAND_SHOWS_W", demandShow)
+            FileUtils.writeStringToFile(demandShowsWFile,demandShow,true)
           })
         }
       }

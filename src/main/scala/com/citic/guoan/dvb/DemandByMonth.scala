@@ -1,5 +1,8 @@
 package com.citic.guoan.dvb
 
+import java.io.File
+
+import org.apache.commons.io.FileUtils
 import org.apache.spark.{SparkConf, SparkContext}
 import org.apache.spark.sql.SQLContext
 import redis.clients.jedis.Jedis
@@ -12,22 +15,22 @@ object DemandByMonth {
   case class SHOW_TYPE(show_name:String,show_type:String)
 
   def main(args: Array[String]): Unit = {
+    val summaryMFile = new File(args(2) + File.separator + "T_USER_SUMMARY_M")
+    val demandMFile = new File(args(2) + File.separator + "T_DEMAND_BROADCAST_M")
+    val demandShowsMFile = new File(args(2) + File.separator + "T_DEMAND_BROADCAST_SHOWS_M")
+
     val USER_INDEX_OFFSET = 1000
     //计算中间结果先放到redis中,最后一并导出文本
-    val jedis = new Jedis("localhost")
+//    val jedis = new Jedis("localhost")
     val conf = new SparkConf().setMaster("local").setAppName("demandByMonth")
     val sc = new SparkContext(conf)
     sc.setLogLevel("WARN")
     val sqlContext = new SQLContext(sc)
     import sqlContext.implicits._
     val data = sc.textFile(args(0))
-      .map(_.split("	")).map(p => DEMAND_DATA(p(0),p(10).toInt,p(3).toLong,p(6))).toDF()
-    data.registerTempTable("demand_origin_temp")
-
+      .map(_.split("	")).map(p => DEMAND_DATA(p(0),p(10).toInt,p(3).toLong,p(6))).toDF().cache()
     val showDict = sc.textFile(args(1))
-      .map(_.split("	")).map ( p =>  SHOW_TYPE(p(0),p(1))).toDF()
-    showDict.registerTempTable("show_dict")
-
+      .map(_.split("	")).map ( p =>  SHOW_TYPE(p(0),p(1))).toDF().cache()
     //加入节目类型 -- 这块比较耗时,如果原始数据能提供更好
     data.join(showDict, data("channel_name")===showDict("show_name"), "left")
         .select("uid","month","remain_time","channel_name","show_type")
@@ -99,9 +102,10 @@ object DemandByMonth {
         val requestOne = remainTime / requestTimes
 
         val summary = month + "\t" + 2 + "\t" + userNum + "\t" + coverPct + "\t" + userIncreasePct + "\t" + userInNum + "\t" +
-          userOutNum + "\t" + remainTime + "\t" + timeUseAVG + "\t" + requestTimes + "\t" + requestAVG + "\t" + requestOne
+          userOutNum + "\t" + remainTime + "\t" + timeUseAVG + "\t" + requestTimes + "\t" + requestAVG + "\t" + requestOne+"\n"
 
-        jedis.sadd("SUMMARY_M", summary)
+//        jedis.sadd("SUMMARY_M", summary)
+        FileUtils.writeStringToFile(summaryMFile,summary,true)
         println(">>> Complete SummaryM:"+summary)
 
         //点播频道类型
@@ -125,8 +129,9 @@ object DemandByMonth {
           val movieShowRatio = movieNum * 1.0 / allShowNum
 
           val demandMovie = month + "\t" + "电影" + "\t" + movieUserIndex + "\t" + movieCoverPct + "\t" + movieMarketPct + "\t" +
-            movieTimeUseAVG + "\t" + movieRemainTime + "\t" + movieUserNum + "\t" + movieShowRatio + "\t" + remainTime + "\t" + userNum
-          jedis.sadd("DEMAND_M", demandMovie)
+            movieTimeUseAVG + "\t" + movieRemainTime + "\t" + movieUserNum + "\t" + movieShowRatio + "\t" + remainTime + "\t" + userNum+"\n"
+//          jedis.sadd("DEMAND_M", demandMovie)
+          FileUtils.writeStringToFile(demandMFile,demandMovie,true)
           println(">>> Complete demandM_movie:" + demandMovie)
         }
 
@@ -145,8 +150,9 @@ object DemandByMonth {
           val tvShowRatio = tvNum * 1.0 / allShowNum
 
           val demandTv = month + "\t" + "电视剧" + "\t" + tvUserIndex + "\t" + tvCoverPct + "\t" + tvMarketPct + "\t" +
-            tvTimeUseAVG + "\t" + tvRemainTime + "\t" + tvUserNum + "\t" + tvShowRatio + "\t" + remainTime + "\t" + userNum
-          jedis.sadd("DEMAND_M", demandTv)
+            tvTimeUseAVG + "\t" + tvRemainTime + "\t" + tvUserNum + "\t" + tvShowRatio + "\t" + remainTime + "\t" + userNum+"\n"
+//          jedis.sadd("DEMAND_M", demandTv)
+          FileUtils.writeStringToFile(demandMFile,demandTv,true)
           println(">>> Complete demandM_tv:" + demandTv)
         }
 
@@ -165,8 +171,10 @@ object DemandByMonth {
             val showTimeUseAVG = showRemainTime / showUserNum
 
             val demandShow = month+"\t"+showName+"\t"+showType+"\t"+showUserIndex+"\t"+showCoverPct+"\t"+showMarketPct+"\t" +
-              showTimeUseAVG+"\t"+showRemainTime+"\t"+showUserNum+"\t"+remainTime+"\t"+userNum
-            jedis.sadd("DEMAND_SHOWS_M", demandShow)
+              showTimeUseAVG+"\t"+showRemainTime+"\t"+showUserNum+"\t"+remainTime+"\t"+userNum+"\n"
+//            jedis.sadd("DEMAND_SHOWS_M", demandShow)
+
+            FileUtils.writeStringToFile(demandShowsMFile,demandShow,true)
           })
         }
       }

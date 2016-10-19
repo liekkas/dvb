@@ -14,6 +14,7 @@ object App {
   def main(args : Array[String]) {
     println( "Hello World!" )
 
+    println("2016-04-01" > "2016-03-31")
   }
 
 }
