@@ -4,4 +4,5 @@
 --jars /Users/liekkas/.m2/repository/redis/clients/jedis/2.8.1/jedis-2.8.1.jar \
 /Users/liekkas/IdeaProjects/asiainfo/scala/dvb/target/dvb-0.0.1-SNAPSHOT.jar \
 /Users/liekkas/IdeaProjects/asiainfo/scala/dvb/data/demand.txt \
-/Users/liekkas/IdeaProjects/asiainfo/scala/dvb/data/show_dict.txt
+/Users/liekkas/IdeaProjects/asiainfo/scala/dvb/data/show_dict.txt \
+/Users/liekkas/IdeaProjects/asiainfo/scala/dvb/data

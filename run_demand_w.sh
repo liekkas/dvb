@@ -3,5 +3,6 @@
 --master local[2] \
 --jars /opt/jars/jedis-2.8.1.jar \
 /opt/jars/dvb-0.0.1-SNAPSHOT.jar \
-/opt/data/demand.txt \
-/opt/data/show_dict.txt
+/opt/data/demodata \
+/opt/data/show_dict.txt \
+/opt/data/result
