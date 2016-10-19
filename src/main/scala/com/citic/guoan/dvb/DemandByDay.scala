@@ -13,7 +13,7 @@ object DemandByDay {
   case class SHOW_TYPE(show_name:String,show_type:String)
 
   def main(args: Array[String]): Unit = {
-    val USER_INDEX_OFFSET = 10000
+    val USER_INDEX_OFFSET = 1000
     //计算中间结果先放到redis中,最后一并导出文本
     val jedis = new Jedis("localhost")
     val conf = new SparkConf().setMaster("local").setAppName("demandByDay")
@@ -22,50 +22,53 @@ object DemandByDay {
     val sqlContext = new SQLContext(sc)
     import sqlContext.implicits._
     val data = sc.textFile(args(0))
-      .map(_.split("	")).map(p => DEMAND_DATA(p(0),p(4),p(3).toLong,p(6))).toDF()
-    data.registerTempTable("demand_origin")
+      .map(_.split("	")).filter(p => p(4) > "2016-03-30") //过滤掉用不着的数据
+      .map(p => DEMAND_DATA(p(0),p(4),p(3).toLong,p(6))).toDF()
+    data.registerTempTable("demand_origin_temp")
+    data.show()
 
     val showDict = sc.textFile(args(1))
       .map(_.split("	")).map ( p =>  SHOW_TYPE(p(0),p(1))).toDF()
     showDict.registerTempTable("show_dict")
 
-    //处理天统计、总的时长和请求次数
+    //加入节目类型 -- 这块比较耗时,如果原始数据能提供更好
+    data.join(showDict, data("channel_name")===showDict("show_name"), "left")
+        .select("uid","day","remain_time","channel_name","show_type")
+        .registerTempTable("demand_origin")
+
+    //按天统计
     sqlContext.sql(
       """
-        select uid,day,sum(remain_time)/60 remain_time,count(*) request_times
-        from demand_origin group by uid,day
-      """.stripMargin
-    ).registerTempTable("demand_day_temp")
-    sqlContext.sql(
-      """
-        select day,sum(remain_time) remain_time,sum(request_times) request_times,count(*) usernum
-        from demand_day_temp group by day
+        select day,sum(remain_time)/60 remain_time,count(*) request_times,count(distinct uid) as usernum
+        from demand_origin group by day
       """.stripMargin
     ).registerTempTable("demand_day_sum")
 
-    //按频道统计并合并节目类型
+    //按节目类型
     sqlContext.sql(
       """
-        select day,channel_name,count(distinct uid) as usernum,sum(remain_time)/60 remain_time,count(*) request_times
-        from demand_origin group by day,channel_name
+        select day,show_type,count(distinct uid) as usernum,sum(remain_time)/60 remain_time,count(distinct channel_name) as shownum
+        from demand_origin group by day,show_type
       """.stripMargin
-    ).registerTempTable("demand_channel_temp")
+    ).registerTempTable("demand_show_type")
+
+    //按节目
     sqlContext.sql(
       """
-        select a.*,b.show_type from demand_channel_temp a,show_dict b where a.channel_name = b.show_name
+        select day,show_type,channel_name,count(distinct uid) as usernum,sum(remain_time)/60 remain_time
+        from demand_origin group by day,show_type,channel_name
       """.stripMargin
     ).registerTempTable("demand_channel")
 
-    //本次需要计算的日 4-9月共183天
-    var start = DateUtils.parseDate("2016-04-01", "yyyy-MM-dd")
+
+    //本次需要计算的自然天
+    val start = DateUtils.parseDate("2016-04-01", "yyyy-MM-dd")
     (0 to 182).foreach(i => {
       val day = DateFormatUtils.format(DateUtils.addDays(start, i), "yyyy-MM-dd")
       println(">>> Process Demand Day:" + day)
       val lastDay = DateFormatUtils.format(DateUtils.addDays(start, i-1),"yyyy-MM-dd")
 
-      //当天总的使用时长、访问次数、用户数
       val sumDF = sqlContext.sql("select * from demand_day_sum where day='" + day + "'")
-      //      //上月用户数
       val lastUserNumDF = sqlContext.sql("select * from demand_day_sum where day='" + lastDay + "'")
       val size = sumDF.count()
       val lastSize = lastUserNumDF.count()
@@ -103,75 +106,71 @@ object DemandByDay {
           userOutNum + "\t" + remainTime + "\t" + timeUseAVG + "\t" + requestTimes + "\t" + requestAVG + "\t" + requestOne
 
         jedis.sadd("SUMMARY_D", summary)
-        println(">>> Complete Summary:"+summary)
+        println(">>> Complete SummaryD:"+summary)
 
         //点播频道类型
-        val allShow = sqlContext.sql("select count(distinct(t.channel_name)) channel_name_num " +
-          "from demand_channel t where t.day='" + day + "'").first()
+        val allShow = sqlContext.sql("select sum(shownum) " +
+          "from demand_show_type t where t.day='" + day + "'").first()
         val allShowNum = allShow.getLong(0) //所有的节目数量
-        val FIX_TIME = 60 * 24
+        val FIX_TIME = 60 * 24 * 30
 
         //电影类
-        val movieDF = sqlContext.sql("select count(distinct(t.channel_name)) channel_name_num, sum(t.remain_time) remain_time, sum(t.request_times) request_times, sum(t.usernum) usernum " +
-          "from demand_channel t where t.day='" + day + "' and t.show_type='电影'")
+        val movieDF = sqlContext.sql("select shownum, remain_time, usernum " +
+          "from demand_show_type t where t.day='" + day + "' and t.show_type='电影'")
         if(movieDF.count() > 0) {
           val movie = movieDF.first()
           val movieNum = movie.getLong(0) //节目数量
           val movieRemainTime = movie.getDouble(1) //点播时间
-          val movieRequestTimes = movie.getLong(2) //点播次数
-          val movieUserNum = movie.getLong(3) //观看用户数
+          val movieUserNum = movie.getLong(2) //观看用户数
           val movieMarketPct = movieRemainTime / remainTime
           val movieCoverPct = movieUserNum * 1.0 / userNum
           val movieUserIndex = movieRemainTime / FIX_TIME / coverUserNum * USER_INDEX_OFFSET
           val movieTimeUseAVG = movieRemainTime / movieUserNum
           val movieShowRatio = movieNum * 1.0 / allShowNum
 
-          val demand_movie = day+"\t"+"电影"+"\t"+movieUserIndex+"\t"+movieCoverPct+"\t"+movieMarketPct+"\t" +
-            movieTimeUseAVG+"\t"+movieRemainTime+"\t"+movieUserNum+"\t"+movieShowRatio+"\t"+remainTime+"\t"+userNum
-          jedis.sadd("DEMAND_D", demand_movie)
-          println(">>> Complete demandW_movie:"+demand_movie)
+          val demandMovie = day + "\t" + "电影" + "\t" + movieUserIndex + "\t" + movieCoverPct + "\t" + movieMarketPct + "\t" +
+            movieTimeUseAVG + "\t" + movieRemainTime + "\t" + movieUserNum + "\t" + movieShowRatio + "\t" + remainTime + "\t" + userNum
+          jedis.sadd("DEMAND_D", demandMovie)
+          println(">>> Complete demandD_movie:" + demandMovie)
         }
 
         //电视剧类
-        val tvDF = sqlContext.sql("select count(distinct(t.channel_name)) channel_name_num, sum(t.remain_time) remain_time, sum(t.request_times) request_times, sum(t.usernum) usernum " +
-          "from demand_channel t where t.day='" + day + "' and t.show_type='电视剧'")
+        val tvDF = sqlContext.sql("select shownum, remain_time, usernum " +
+          "from demand_show_type t where t.day='" + day + "' and t.show_type='电视剧'")
         if(tvDF.count() > 0) {
           val tv = tvDF.first()
           val tvNum = tv.getLong(0) //节目数量
           val tvRemainTime = tv.getDouble(1) //点播时间
-          val tvRequestTimes = tv.getLong(2) //点播次数
-          val tvUserNum = tv.getLong(3) //观看用户数
+          val tvUserNum = tv.getLong(2) //观看用户数
           val tvMarketPct = tvRemainTime / remainTime
           val tvCoverPct = tvUserNum * 1.0 / userNum
           val tvUserIndex = tvRemainTime / FIX_TIME / coverUserNum * USER_INDEX_OFFSET
           val tvTimeUseAVG = tvRemainTime / tvUserNum
           val tvShowRatio = tvNum * 1.0 / allShowNum
 
-          val demand_tv = day+"\t"+"电视剧"+"\t"+tvUserIndex+"\t"+tvCoverPct+"\t"+tvMarketPct+"\t" +
-            tvTimeUseAVG+"\t"+tvRemainTime+"\t"+tvUserNum+"\t"+tvShowRatio+"\t"+remainTime+"\t"+userNum
-          jedis.sadd("DEMAND_D", demand_tv)
-          println(">>> Complete demandD_tv:"+demand_tv)
+          val demandTv = day + "\t" + "电视剧" + "\t" + tvUserIndex + "\t" + tvCoverPct + "\t" + tvMarketPct + "\t" +
+            tvTimeUseAVG + "\t" + tvRemainTime + "\t" + tvUserNum + "\t" + tvShowRatio + "\t" + remainTime + "\t" + userNum
+          jedis.sadd("DEMAND_D", demandTv)
+          println(">>> Complete demandD_tv:" + demandTv)
         }
 
         //点播节目
-        val shows = sqlContext.sql("select t.channel_name,sum(t.remain_time) remain_time, sum(t.request_times) request_times, sum(t.usernum) usernum" +
-          " from demand_channel t where t.show_type = '电视剧' or t.show_type = '电影' and t.day='" + day + "' group by t.channel_name").collect()
+        val shows = sqlContext.sql("select channel_name,remain_time, show_type, usernum" +
+          " from demand_channel where show_type = '电视剧' or show_type = '电影' and day='" + day + "'").collect()
         if(shows.size > 0) {
           shows.foreach(show => {
             val showName = show.getString(0)
             val showRemainTime = show.getDouble(1)
-            val showRequestTimes = show.getLong(2)
+            val showType = show.getString(2)
             val showUserNum = show.getLong(3)
-            val showType = sqlContext.sql("select show_type from show_dict where show_name='" + showName + "'").first().getString(0)
             val showMarketPct = showRemainTime / remainTime
             val showCoverPct = showUserNum * 1.0 / userNum
             val showUserIndex = showRemainTime / FIX_TIME / coverUserNum * USER_INDEX_OFFSET
             val showTimeUseAVG = showRemainTime / showUserNum
 
-            val demandShows = day+"\t"+showName+"\t"+showType+"\t"+showUserIndex+"\t"+showCoverPct+"\t"+showMarketPct+"\t" +
+            val demandShow = day+"\t"+showName+"\t"+showType+"\t"+showUserIndex+"\t"+showCoverPct+"\t"+showMarketPct+"\t" +
               showTimeUseAVG+"\t"+showRemainTime+"\t"+showUserNum+"\t"+remainTime+"\t"+userNum
-            jedis.sadd("DEMAND_SHOWS_D", demandShows)
-            println(">>> Complete show_dEMAND_SHOWS_D:"+demandShows)
+            jedis.sadd("DEMAND_SHOWS_D", demandShow)
           })
         }
       }
