@@ -15,7 +15,7 @@ object DemandPrepare {
   case class DEMAND_DATA(uid:String,month:Int,week:Int,day:String,remain_time:Long)
 
   def main(args: Array[String]): Unit = {
-    val resultFile = new File(args(1) + File.separator + "demand_uid_count")
+    val resultFile = new File(args(1) + File.separator + "demand_uid_count.txt")
 
     //计算中间结果先放到redis中,最后一并导出文本
     val jedis = new Jedis("localhost")
