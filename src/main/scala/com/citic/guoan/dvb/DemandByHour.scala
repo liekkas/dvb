@@ -1,12 +1,7 @@
 package com.citic.guoan.dvb
 
-import java.io.File
-
-import org.apache.commons.io.FileUtils
-import org.apache.commons.lang3.time.{DateFormatUtils, DateUtils}
 import org.apache.spark.sql.SQLContext
 import org.apache.spark.{SparkConf, SparkContext}
-import redis.clients.jedis.Jedis
 
 /**
   * Created by liekkas on 16/10/17.
@@ -14,141 +9,163 @@ import redis.clients.jedis.Jedis
 object DemandByHour {
   case class DEMAND_DATA(uid:String,day:String,hour:Int,remain_time:Long,channel_name:String)
   case class SHOW_TYPE(show_name:String,show_type:String)
-  case class UID_COUNT(date_type:String,date:String,user_num:Long,cover_user_num:Long,user_in_num:Long,user_out_num:Long)
+  case class UID_COUNT(date_type:String,date:String,cover_user_num:Long)
 
   def main(args: Array[String]): Unit = {
-    val summaryTFile = new File(args(3) + File.separator + "T_USER_SUMMARY_T")
-    val demandTFile = new File(args(3) + File.separator + "T_DEMAND_BROADCAST_T")
-    val demandShowsTFile = new File(args(3) + File.separator + "T_DEMAND_BROADCAST_SHOWS_T")
-
     val USER_INDEX_OFFSET = 1000
-//    val conf = new SparkConf().setMaster("local").setAppName("demandByHour")
-    val conf = new SparkConf().setAppName("demandByHour")
+    val FIX_TIME = 60
+    val conf = new SparkConf().setMaster("local").setAppName("demandByHour")
+    //    val conf = new SparkConf().setAppName("demandByHour")
     val sc = new SparkContext(conf)
     sc.setLogLevel("WARN")
     val sqlContext = new SQLContext(sc)
     import sqlContext.implicits._
     val data = sc.textFile(args(0))
-      .map(_.split("	"))//.filter(p => p(4) > "2016-03-31") //过滤掉用不着的数据
-      .map(p => DEMAND_DATA(p(0),p(2),p(4).toInt,p(1).toLong,p(3))).toDF().cache()
+      .map(_.split("	")).filter(p => (p(2) >= args(4) && p(2) <= args(5))) //过滤掉用不着的数据
+      .map(p => DEMAND_DATA(p(0),p(2),p(4).toInt,p(1).toLong,p(3))).toDF()
     val showDict = sc.textFile(args(1))
-      .map(_.split("	")).map ( p =>  SHOW_TYPE(p(0),p(1))).toDF().cache()
-    //加入节目类型 -- 这块比较耗时,如果原始数据能提供更好
-    data.join(showDict, data("channel_name")===showDict("show_name"), "left")
-      .select("uid","day","hour","remain_time","channel_name","show_type")
-      .registerTempTable("demand_origin")
-
-    sc.textFile(args(2))
+      .map(_.split("	")).map ( p =>  SHOW_TYPE(p(0),p(1))).toDF()
+    val uidCount = sc.textFile(args(2))
       .map(_.split("	")).filter(p => p(0).equals("day"))
-      .map ( p =>  UID_COUNT(p(0),p(1),p(2).toLong,p(3).toLong,p(4).toLong,p(5).toLong)).toDF()
-      .registerTempTable("uid_count")
+      .map ( p =>  UID_COUNT(p(0),p(1),p(3).toLong)).toDF()
+
+    //加入节目类型 - 当做原始表看待
+    val demandData = data.join(showDict, data("channel_name")===showDict("show_name"), "left")
+      .select("uid","day","hour","remain_time","channel_name","show_type")
+    demandData.registerTempTable("demand_origin")
+    sqlContext.cacheTable("demand_origin")
 
     //按时统计
-    sqlContext.sql(
+    val hourSum = sqlContext.sql(
       """
-        select day,sum(remain_time)/60 remain_time,count(*) request_times,count(distinct uid) as usernum, hour
+        select day,hour,
+          count(distinct uid) as user_num,
+          sum(remain_time)/60 remain_time,
+          count(*) request_times,
+          count(distinct channel_name) all_show_num
         from demand_origin group by day,hour
       """.stripMargin
-    ).registerTempTable("demand_hour_sum")
+    )
+    val summary = hourSum.join(uidCount, hourSum("day")===uidCount("date"), "left")
+      .select("day","hour","user_num","cover_user_num","remain_time","request_times","all_show_num")
+    summary.registerTempTable("demand_hour_sum")
+    sqlContext.cacheTable("demand_hour_sum")
 
-    //按节目类型
-    sqlContext.sql(
+    //------------------------------------------------
+    //                用户概况
+    //------------------------------------------------
+    val summaryResult = sqlContext.sql(
       """
-        select day,show_type,count(distinct uid) as usernum,sum(remain_time)/60 remain_time,count(distinct channel_name) as shownum, hour
-        from demand_origin group by day,hour,show_type
+        select
+          day,
+          hour,
+          user_num,
+          user_num*1.0/cover_user_num as coverPct,
+          remain_time,
+          remain_time/user_num as timeUseAVG,
+          request_times,
+          request_times*1.0/user_num as requestAVG,
+          remain_time/request_times as requestOne
+        from demand_hour_sum
       """.stripMargin
-    ).registerTempTable("demand_show_type")
+    )
+    summaryResult.map(f => f(0) + "\t" + f(1) + "\t" + 2 + "\t" + f(2) + "\t" + "%.4f".format(f(3)) + "\t" +
+      "%.4f".format(f(4)) + "\t" + "%.4f".format(f(5)) + "\t" + f(6) + "\t" + "%.4f".format(f(7))+ "\t" + "%.4f".format(f(8)))
+        .repartition(1).saveAsTextFile(args(3)+"/demandByHour/summary")
 
-    //按节目
-    sqlContext.sql(
+    println(">>> Complete Summary!")
+
+    //------------------------------------------------
+    //                按节目类型
+    //------------------------------------------------
+    val showType = sqlContext.sql(
       """
-        select day,show_type,channel_name,count(distinct uid) as usernum,sum(remain_time)/60 remain_time, hour
-        from demand_origin group by day,hour,show_type,channel_name
+        select day as show_day,hour as show_hour,show_type,
+          count(distinct uid) as show_user_num,
+          sum(remain_time)/60 show_remain_time,
+          count(distinct channel_name) as show_num
+        from demand_origin
+        group by day,hour,show_type
       """.stripMargin
-    ).registerTempTable("demand_channel")
+    )
+    showType.registerTempTable("demand_show_type_sum")
 
-    //本次需要计算的日 4-9月共183天
-    val start = DateUtils.parseDate("2016-04-01", "yyyy-MM-dd")
-    (0 to 182).foreach(i => {
-      val day = DateFormatUtils.format(DateUtils.addDays(start, i), "yyyy-MM-dd")
-      for (hour <- 0 to 23 ) {
-        println(">>> Process Demand Day:" + day + " Hour:" + hour)
-        val sumDF = sqlContext.sql("select * from demand_hour_sum where day='"+day+"' and hour="+hour)
-        if(sumDF.count() > 0) {
-          val sum = sumDF.first()
-          val remainTime = sum.getDouble(1)
-          val requestTimes = sum.getLong(2)
-          val userNum = sum.getLong(3)
+    val showTypeJoined = sqlContext.sql(
+      """
+        select b.day,b.hour,a.show_type,a.show_user_num,a.show_remain_time,show_num,
+               b.user_num,b.remain_time,b.cover_user_num,b.all_show_num
+          from demand_show_type_sum a
+     left join demand_hour_sum b
+            on a.show_day = b.day and a.show_hour = b.hour
+         where a.show_type="电影" or a.show_type="电视剧"
+      """.stripMargin)
+    showTypeJoined.registerTempTable("demand_show_type")
+    showTypeJoined.show()
 
-          //      //用户概况和行为 小时的是当天的覆盖用户数,所以都相等
-          val uidCount = sqlContext.sql("select cover_user_num from uid_count where date='" + day + "'").first()
-          val coverUserNum = uidCount.getLong(0)
+    val showTypeResult = sqlContext.sql(
+      s"""
+        select day,hour,show_type,
+                show_remain_time / ${FIX_TIME} / cover_user_num * ${USER_INDEX_OFFSET} as userIndex,
+                show_user_num * 1.0 / user_num as coverPct,
+                show_remain_time / remain_time as marketPct,
+                show_remain_time / show_user_num as timeUseAVG,
+                show_remain_time,
+                show_user_num,
+                show_num * 1.0 / all_show_num as showRatio,
+                remain_time,
+                user_num
+          from demand_show_type
+      """.stripMargin)
+    showTypeResult.map(f => f(0) + "\t" + f(1) + "\t" + f(2) + "\t" + "%.4f".format(f(3)) + "\t" +
+      "%.4f".format(f(4)) + "\t" + "%.4f".format(f(5)) + "\t" +
+      "%.4f".format(f(6)) + "\t" + "%.4f".format(f(7)) + "\t" + f(8) + "\t" +
+      "%.4f".format(f(9)) + "\t" + "%.4f".format(f(10)) + "\t" + f(11)
+    ).repartition(1).saveAsTextFile(args(3)+"/demandByHour/showType")
+    println(">>> Complete DemandByHourShowType!")
 
-          val coverPct = userNum * 1.0 / coverUserNum
-          val timeUseAVG = remainTime / userNum
-          val requestAVG = requestTimes * 1.0 / userNum
-          val requestOne = remainTime / requestTimes
+    //------------------------------------------------
+    //                按具体节目
+    //------------------------------------------------
+    val show = sqlContext.sql(
+      """
+        select day as show_day,hour as show_hour,show_type,channel_name as show_name,
+          count(distinct uid) as show_user_num,
+          sum(remain_time)/60 show_remain_time
+        from demand_origin
+        group by day,hour,show_type,channel_name
+      """.stripMargin
+    )
+    show.registerTempTable("demand_show_sum")
 
-          val summary = day + "\t" + hour + "\t" + 2 + "\t" + userNum + "\t" + "%.4f".format(coverPct) + "\t" +
-            "%.4f".format(remainTime) + "\t" + "%.4f".format(timeUseAVG) + "\t" + requestTimes + "\t" + "%.4f".format(requestAVG) + "\t" + "%.4f".format(requestOne)+"\n"
-          FileUtils.writeStringToFile(summaryTFile,summary,true)
-          println(">>> Complete SummaryT:"+summary)
+    val showJoined = sqlContext.sql(
+      """
+        select b.day,b.hour,a.show_type,a.show_name,a.show_user_num,a.show_remain_time,
+               b.user_num,b.remain_time,b.cover_user_num
+          from demand_show_sum a
+     left join demand_hour_sum b
+            on a.show_day = b.day and a.show_hour = b.hour
+         where a.show_type="电影" or a.show_type="电视剧"
+      """.stripMargin)
+    showJoined.registerTempTable("demand_show")
+    showJoined.show()
 
-          //点播频道类型
-          val allShow = sqlContext.sql("select sum(shownum) " +
-            "from demand_show_type t where t.day='" + day + "' and t.hour="+hour).first()
-          val allShowNum = allShow.getLong(0) //所有的节目数量
-          val FIX_TIME = 60
-
-          Array("电影","电视剧").foreach(item => {
-            //按节目类型
-            val tvDF = sqlContext.sql("select shownum, remain_time, usernum " +
-              "from demand_show_type t where t.day='" + day + "' and t.hour="+hour+" and t.show_type='"+item+"'")
-            if(tvDF.count() > 0) {
-              val tv = tvDF.first()
-              val tvNum = tv.getLong(0) //节目数量
-              val tvRemainTime = tv.getDouble(1) //点播时间
-              val tvUserNum = tv.getLong(2) //观看用户数
-              val tvMarketPct = tvRemainTime / remainTime
-              val tvCoverPct = tvUserNum * 1.0 / userNum
-              val tvUserIndex = tvRemainTime / FIX_TIME / coverUserNum * USER_INDEX_OFFSET
-              val tvTimeUseAVG = tvRemainTime / tvUserNum
-              val tvShowRatio = tvNum * 1.0 / allShowNum
-
-              val demandTv = day + "\t" + hour + "\t" + item + "\t" + "%.4f".format(tvUserIndex) + "\t" + "%.4f".format(tvCoverPct) + "\t" + "%.4f".format(tvMarketPct) + "\t" +
-                "%.4f".format(tvTimeUseAVG) + "\t" + "%.4f".format(tvRemainTime) + "\t" + tvUserNum + "\t" + "%.4f".format(tvShowRatio) + "\t" + "%.4f".format(remainTime) + "\t" + userNum+"\n"
-
-              FileUtils.writeStringToFile(demandTFile,demandTv,true)
-              println(">>> Complete demandT_tv:"+demandTv)
-            }else{
-              val demandTv = day+"\t"+hour + "\t" + "item" + "\t" + 0.00 + "\t" + 0.00 + "\t" + 0.00 + "\t" +
-                0.00 + "\t" + 0.00 + "\t" + 0 + "\t" + 0.00 + "\t" + "%.4f".format(remainTime) + "\t" + userNum+"\n"
-              FileUtils.writeStringToFile(demandTFile,demandTv,true)
-            }
-
-            //按具体节目
-            val shows = sqlContext.sql("select channel_name,remain_time, show_type, usernum" +
-              " from demand_channel where show_type = '" + item + "' and t.day='" + day + "' and t.hour="+hour).collect()
-            if (shows.size > 0) {
-              shows.foreach(show => {
-                val showName = show.getString(0)
-                val showRemainTime = show.getDouble(1)
-                val showType = show.getString(2)
-                val showUserNum = show.getLong(3)
-                val showMarketPct = showRemainTime / remainTime
-                val showCoverPct = showUserNum * 1.0 / userNum
-                val showUserIndex = showRemainTime / FIX_TIME / coverUserNum * USER_INDEX_OFFSET
-                val showTimeUseAVG = showRemainTime / showUserNum
-
-                val demandShow = day+"\t"+hour+"\t"+showName+"\t"+showType+"\t"+"%.4f".format(showUserIndex)+"\t"+"%.4f".format(showCoverPct)+"\t"+"%.4f".format(showMarketPct)+"\t" +
-                  "%.4f".format(showTimeUseAVG)+"\t"+"%.4f".format(showRemainTime)+"\t"+showUserNum+"\t"+"%.4f".format(remainTime)+"\t"+userNum+"\n"
-
-                FileUtils.writeStringToFile(demandShowsTFile,demandShow,true)
-              })
-            }
-          })
-        }
-      }
-    })
+    val showResult = sqlContext.sql(
+      s"""
+        select day,hour,show_name,show_type,
+                show_remain_time / ${FIX_TIME} / cover_user_num * ${USER_INDEX_OFFSET} as userIndex,
+                show_user_num * 1.0 / user_num as coverPct,
+                show_remain_time / remain_time as marketPct,
+                show_remain_time / show_user_num as timeUseAVG,
+                show_remain_time,
+                show_user_num,
+                remain_time,
+                user_num
+          from demand_show
+      """.stripMargin)
+    showResult.map(f => f(0) + "\t" + f(1) + "\t" + f(2)+ "\t" + f(3) + "\t" +
+      "%.4f".format(f(4)) + "\t" + "%.4f".format(f(5)) + "\t" + "%.4f".format(f(6)) + "\t" +
+      "%.4f".format(f(7)) + "\t" + "%.4f".format(f(8)) + "\t" + f(9) + "\t" + "%.4f".format(f(10)) + "\t" + f(11)
+    ).repartition(1).saveAsTextFile(args(3)+"/demandByHour/show")
+    println(">>> Complete DemandByHourShow!")
   }
 }
