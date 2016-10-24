@@ -12,21 +12,22 @@ import redis.clients.jedis.Jedis
   * Created by liekkas on 16/10/17.
   */
 object DemandPrepare {
-  case class DEMAND_DATA(uid:String,month:Int,week:Int,day:String,remain_time:Long)
+  case class DEMAND_DATA(uid:String,month:Int,week:Int,day:String,time_in_use:Long,show_name:String,flag:String)
 
   def main(args: Array[String]): Unit = {
-    val resultFile = new File(args(1) + File.separator + "demand_uid_count.txt")
+    val resultFile = new File(args(1) + File.separator + "demand_prepare_sum.txt")
 
     //计算中间结果先放到redis中,最后一并导出文本
     val jedis = new Jedis("localhost")
-    val conf = new SparkConf().setMaster("local").setAppName("demandPrepare")
+    val conf = new SparkConf().setAppName("demandPrepare")
     val sc = new SparkContext(conf)
     sc.setLogLevel("WARN")
     val sqlContext = new SQLContext(sc)
     import sqlContext.implicits._
     val data = sc.textFile(args(0))
-      .map(_.split("	")).map(p => DEMAND_DATA(p(0),p(6).toInt,p(5).toInt,p(2),p(1).toLong)).toDF()
+      .map(_.split("	")).map(p => DEMAND_DATA(p(0),p(6).toInt,p(5).toInt,p(2),p(1).toLong,p(3),p(7))).toDF()
       .registerTempTable("demand_origin")
+    sqlContext.cacheTable("demand_origin")
 
     val MONTH = "DEMAND_MONTH"
     val WEEK = "DEMAND_WEEK"
@@ -42,28 +43,40 @@ object DemandPrepare {
       if(!jedis.exists(lastMonth+MONTH)) {
         //先求上个时刻的用户数,并保存到redis中
         sqlContext.sql("select distinct(uid) from demand_origin where month=" + lastMonth)
-            .collect().foreach(uid => {
+          .collect().foreach(uid => {
             jedis.sadd(lastMonth + MONTH, uid.getString(0).toString)
             jedis.sadd(MONTH, uid.getString(0))
           })
       }
 
       //本月用户数
-      val users = sqlContext.sql("select distinct(uid) from demand_origin where month=" + month)
-          .collect()
-      users.foreach(uid => {
-          jedis.sadd(month+MONTH, uid.getString(0))
-          jedis.sadd(MONTH, uid.getString(0))
+      sqlContext.sql("select distinct(uid) from demand_origin where month=" + month)
+        .collect().foreach(uid => {
+            jedis.sadd(month+MONTH, uid.getString(0))
+            jedis.sadd(MONTH, uid.getString(0))
         })
-
+      //用户数
+      val userNum = jedis.smembers(month+MONTH).size()
       //覆盖用户数
       val coverUserNum = jedis.smembers(MONTH).size()
       //流入用户数 - 昨天没在线今天在线
       val userInNum = jedis.sdiff(month+MONTH,lastMonth+MONTH).size()
       //流出用户数 - 昨天在线今天没在线
       val userOutNum = jedis.sdiff(lastMonth+MONTH,month+MONTH).size()
+      //上个时间的用户数
+      val lastUserNum = jedis.smembers(lastMonth+MONTH).size()
+      //点播次数
+      val requestTimes = sqlContext.sql("select count(*) from demand_origin where month=" + month + " and flag='true'")
+        .first().getLong(0)
+      //所有节目数
+      val temp = sqlContext.sql("select sum(time_in_use)/60, count(distinct show_name) from demand_origin where month=" + month).first()
+      val timeInUse = temp.getDouble(0)
+      val allShowNum = temp.getLong(1)
+
       //最终结果保存到文本中,供后续计算使用
-      val result = "month" + "\t" +month + "\t" + users.size + "\t" + coverUserNum+"\t"+userInNum+"\t"+userOutNum+"\n"
+      val result = "month" + "\t" +month + "\t" + userNum + "\t" +
+        coverUserNum+"\t"+userInNum+"\t"+userOutNum+"\t"+lastUserNum+"\t"+
+        requestTimes+"\t"+timeInUse+"\t"+allShowNum+"\n"
       FileUtils.writeStringToFile(resultFile,result,true)
 
       jedis.del(lastMonth+MONTH)
@@ -81,26 +94,39 @@ object DemandPrepare {
         //先求上个时刻的用户数,并保存到redis中
         sqlContext.sql("select distinct(uid) from demand_origin where week=" + lastWeek)
           .collect().foreach(uid => {
-          jedis.sadd(lastWeek + WEEK, uid.getString(0).toString)
-          jedis.sadd(WEEK, uid.getString(0))
+            jedis.sadd(lastWeek + WEEK, uid.getString(0).toString)
+            jedis.sadd(WEEK, uid.getString(0))
         })
       }
 
       //本周用户数
-      val users = sqlContext.sql("select distinct(uid) from demand_origin where week=" + week)
-        .collect()
-      users.foreach(uid => {
-        jedis.sadd(week+WEEK, uid.getString(0))
-        jedis.sadd(WEEK, uid.getString(0))
+      sqlContext.sql("select distinct(uid) from demand_origin where week=" + week)
+        .collect().foreach(uid => {
+          jedis.sadd(week+WEEK, uid.getString(0))
+          jedis.sadd(WEEK, uid.getString(0))
       })
+      //用户数
+      val userNum = jedis.smembers(week+WEEK).size()
       //覆盖用户数
       val coverUserNum = jedis.smembers(WEEK).size()
       //流入用户数 - 昨天没在线今天在线
       val userInNum = jedis.sdiff(week+WEEK,lastWeek+WEEK).size()
       //流出用户数 - 昨天在线今天没在线
       val userOutNum = jedis.sdiff(lastWeek+WEEK,week+WEEK).size()
+      //上个时间的用户数
+      val lastUserNum = jedis.smembers(lastWeek+WEEK).size()
+      //点播次数
+      val requestTimes = sqlContext.sql("select count(*) from demand_origin where week=" + week + " and flag='true'")
+        .first().getLong(0)
+      //所有节目数
+      val temp = sqlContext.sql("select sum(time_in_use)/60, count(distinct show_name) from demand_origin where week=" + week).first()
+      val timeInUse = temp.getDouble(0)
+      val allShowNum = temp.getLong(1)
+
       //最终结果保存到文本中,供后续计算使用
-      val result = "week" + "\t" +week + "\t" + users.size + "\t" + coverUserNum+"\t"+userInNum+"\t"+userOutNum+"\n"
+      val result = "week" + "\t" +week + "\t" + userNum + "\t" +
+        coverUserNum+"\t"+userInNum+"\t"+userOutNum+"\t"+lastUserNum+"\t"+
+        requestTimes+"\t"+timeInUse+"\t"+allShowNum+"\n"
       FileUtils.writeStringToFile(resultFile,result,true)
 
       jedis.del(lastWeek+WEEK)
@@ -119,26 +145,39 @@ object DemandPrepare {
         //先求上个时刻的用户数,并保存到redis中
         sqlContext.sql("select distinct(uid) from demand_origin where day='" + lastDay + "'")
           .collect().foreach(uid => {
-          jedis.sadd(lastDay + DAY, uid.getString(0).toString)
-          jedis.sadd(DAY, uid.getString(0))
+            jedis.sadd(lastDay + DAY, uid.getString(0).toString)
+            jedis.sadd(DAY, uid.getString(0))
         })
       }
 
       //本天用户数
-      val users = sqlContext.sql("select distinct(uid) from demand_origin where day='" + day + "'")
-        .collect()
-      users.foreach(uid => {
-        jedis.sadd(day+DAY, uid.getString(0))
-        jedis.sadd(DAY, uid.getString(0))
+      sqlContext.sql("select distinct(uid) from demand_origin where day='" + day + "'")
+        .collect().foreach(uid => {
+          jedis.sadd(day+DAY, uid.getString(0))
+          jedis.sadd(DAY, uid.getString(0))
       })
+      //用户数
+      val userNum = jedis.smembers(day+DAY).size()
       //覆盖用户数
       val coverUserNum = jedis.smembers(DAY).size()
       //流入用户数 - 昨天没在线今天在线
       val userInNum = jedis.sdiff(day+DAY,lastDay+DAY).size()
       //流出用户数 - 昨天在线今天没在线
       val userOutNum = jedis.sdiff(lastDay+DAY,day+DAY).size()
+      //上个时间的用户数
+      val lastUserNum = jedis.smembers(lastDay+DAY).size()
+      //点播次数
+      val requestTimes = sqlContext.sql("select count(*) from demand_origin where day='" + day + "' and flag='true'")
+        .first().getLong(0)
+      //所有节目数
+      val temp = sqlContext.sql("select sum(time_in_use)/60, count(distinct show_name) from demand_origin where day='" + day + "'").first()
+      val timeInUse = temp.getDouble(0)
+      val allShowNum = temp.getLong(1)
+
       //最终结果保存到文本中,供后续计算使用
-      val result = "day" + "\t" +day + "\t" + users.size + "\t" + coverUserNum+"\t"+userInNum+"\t"+userOutNum+"\n"
+      val result = "day" + "\t" +day + "\t" + userNum + "\t" +
+        coverUserNum+"\t"+userInNum+"\t"+userOutNum+"\t"+lastUserNum+"\t"+
+        requestTimes+"\t"+timeInUse+"\t"+allShowNum+"\n"
       FileUtils.writeStringToFile(resultFile,result,true)
 
       jedis.del(lastDay+DAY)
