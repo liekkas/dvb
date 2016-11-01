@@ -5,4 +5,7 @@
 hdfs://10.91.33.17:9000/user/hadoop/zxga_data/demodata \
 hdfs://10.91.33.17:9000/user/hadoop/zxga_data/show_dict.txt \
 hdfs://10.91.33.17:9000/user/hadoop/zxga_data/demand_uid_count \
-/opt/data/result
+hdfs://10.91.33.17:9000/user/hadoop/zxga_data/result
+2016-04-01 \
+2016-08-31 \
+1000

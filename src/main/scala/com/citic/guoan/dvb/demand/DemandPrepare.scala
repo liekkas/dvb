@@ -1,4 +1,4 @@
-package com.citic.guoan.dvb
+package com.citic.guoan.dvb.demand
 
 import java.io.File
 
@@ -15,7 +15,7 @@ object DemandPrepare {
   case class DEMAND_DATA(uid:String,month:Int,week:Int,day:String,time_in_use:Long,show_name:String,flag:String)
 
   def main(args: Array[String]): Unit = {
-    val resultFile = new File(args(1) + File.separator + "demand_prepare_sum.txt")
+    val resultFile = new File(args(2))
 
     //计算中间结果先放到redis中,最后一并导出文本
     val jedis = new Jedis("localhost")
@@ -33,6 +33,14 @@ object DemandPrepare {
     val WEEK = "DEMAND_WEEK"
     val DAY = "DEMAND_DAY"
 
+    //导入以前的uid- 月、周、日都存一份
+    sc.textFile(args(1))
+      .collect().foreach(uid => {
+        jedis.sadd(MONTH, uid)
+        jedis.sadd(WEEK, uid)
+        jedis.sadd(DAY, uid)
+      })
+
     //计算月覆盖用户数、流入、流出用户数
     val months = 201604 to 201609
     months.foreach(month => {
@@ -45,7 +53,6 @@ object DemandPrepare {
         sqlContext.sql("select distinct(uid) from demand_origin where month=" + lastMonth)
           .collect().foreach(uid => {
             jedis.sadd(lastMonth + MONTH, uid.getString(0).toString)
-            jedis.sadd(MONTH, uid.getString(0))
           })
       }
 
@@ -81,6 +88,7 @@ object DemandPrepare {
 
       jedis.del(lastMonth+MONTH)
     })
+    jedis.del(201609+MONTH)
     jedis.del(MONTH)
 
     //计算周覆盖用户数、流入、流出用户数
@@ -95,7 +103,6 @@ object DemandPrepare {
         sqlContext.sql("select distinct(uid) from demand_origin where week=" + lastWeek)
           .collect().foreach(uid => {
             jedis.sadd(lastWeek + WEEK, uid.getString(0).toString)
-            jedis.sadd(WEEK, uid.getString(0))
         })
       }
 
@@ -131,6 +138,7 @@ object DemandPrepare {
 
       jedis.del(lastWeek+WEEK)
     })
+    jedis.del(201640+WEEK)
     jedis.del(WEEK)
 
     //计算天覆盖用户数、流入、流出用户数
@@ -146,7 +154,6 @@ object DemandPrepare {
         sqlContext.sql("select distinct(uid) from demand_origin where day='" + lastDay + "'")
           .collect().foreach(uid => {
             jedis.sadd(lastDay + DAY, uid.getString(0).toString)
-            jedis.sadd(DAY, uid.getString(0))
         })
       }
 
@@ -182,6 +189,7 @@ object DemandPrepare {
 
       jedis.del(lastDay+DAY)
     })
+    jedis.del("2016-09-30"+DAY)
     jedis.del(DAY)
   }
 }

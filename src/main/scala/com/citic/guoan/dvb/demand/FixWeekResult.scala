@@ -1,4 +1,4 @@
-package com.citic.guoan.dvb
+package com.citic.guoan.dvb.demand
 
 import org.apache.spark.sql.SQLContext
 import org.apache.spark.{SparkConf, SparkContext}
@@ -17,7 +17,6 @@ object FixWeekResult {
     val sc = new SparkContext(conf)
     sc.setLogLevel("WARN")
     val sqlContext = new SQLContext(sc)
-    import sqlContext.implicits._
 
     sc.textFile(args(0))
       .map(_.split("	"))

@@ -1,4 +1,4 @@
-package com.citic.guoan.dvb
+package com.citic.guoan.dvb.demand
 
 import org.apache.spark.sql.SQLContext
 import org.apache.spark.{SparkConf, SparkContext}
@@ -62,7 +62,7 @@ object DemandByWeek {
     summaryResult.map(f => f(0) + "\t" + 2 + "\t" + f(1) + "\t" +
       "%.4f".format(f(2)) + "\t" + "%.4f".format(f(3)) + "\t" + f(4) +"\t" + f(5) + "\t"+
       "%.4f".format(f(6)) + "\t" + "%.4f".format(f(7)) + "\t" + f(8) + "\t" + "%.4f".format(f(9))+ "\t" + "%.4f".format(f(10)))
-      .repartition(1).saveAsTextFile(args(3)+"/demandByWeek/summary")
+      .repartition(1).saveAsTextFile(args(3)+"/summary")
     println(">>> Complete DemandByWeek::Summary!")
 
     //------------------------------------------------
@@ -111,7 +111,7 @@ object DemandByWeek {
       "%.4f".format(f(2)) + "\t" + "%.4f".format(f(3)) + "\t" + "%.4f".format(f(4)) + "\t" +
       "%.4f".format(f(5)) + "\t" + "%.4f".format(f(6)) + "\t" + f(7) + "\t" +
       "%.4f".format(f(8)) + "\t" + "%.4f".format(f(9)) + "\t" + f(10)
-    ).repartition(1).saveAsTextFile(args(3)+"/demandByWeek/showType")
+    ).repartition(1).saveAsTextFile(args(3)+"/showType")
     println(">>> Complete DemandByWeek::ShowType!")
 
     //------------------------------------------------
@@ -158,7 +158,7 @@ object DemandByWeek {
     showResult.map(f => f(0) + "\t" + f(1) + "\t" + f(2)+ "\t" +
       "%.4f".format(f(3)) + "\t" + "%.4f".format(f(4)) + "\t" + "%.4f".format(f(5)) + "\t" +
       "%.4f".format(f(6)) + "\t" + "%.4f".format(f(7)) + "\t" + f(8) + "\t" + "%.4f".format(f(9)) + "\t" + f(10)
-    ).repartition(1).saveAsTextFile(args(3)+"/demandByWeek/show")
+    ).repartition(1).saveAsTextFile(args(3)+"/show")
     println(">>> Complete DemandByWeek::Show!")
   }
 }
