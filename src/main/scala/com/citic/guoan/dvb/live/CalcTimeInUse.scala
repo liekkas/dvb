@@ -62,16 +62,23 @@ object CalcTimeInUse {
       val df = sqlContext.sql(
         """
         select a.uid,a.month,a.week,a.day,a.hour,a.channel_name,a.program_name,
-               sum(b.milliseconds-a.milliseconds)/1000 time_in_use
+               (b.milliseconds-a.milliseconds)/1000 time_in_use
           from left_table a,right_table b
          where a.row = b.row
            and a.uid = b.uid
-         group by a.uid,a.month,a.week,a.day,a.hour,a.channel_name,a.program_name
         """.stripMargin)
 
       df.filter(df("time_in_use") >= 5 && df("time_in_use") <= 36000)  //去掉小于5秒和大于10小时的数据
+        .registerTempTable("filter_result")
+
+      sqlContext.sql(
+        """
+        select a.uid,a.month,a.week,a.day,a.hour,a.channel_name,a.program_name,sum(a.time_in_use)
+          from filter_result a
+         group by a.uid,a.month,a.week,a.day,a.hour,a.channel_name,a.program_name
+        """.stripMargin)
         .map(f => f(0) + "\t" +f(1) + "\t" +f(2) + "\t" +f(3) + "\t" +f(4) + "\t" +f(5) + "\t" +
-        f(6) + "\t" + f(7).toString.toDouble.toInt)
+          f(6) + "\t" + f(7).toString.toDouble.toInt)
         .coalesce(args(2).toInt).saveAsTextFile(args(1), classOf[GzipCodec])
     }
   }
