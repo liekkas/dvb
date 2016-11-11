@@ -1,8 +1,7 @@
 package com.citic.guoan.dvb.live
 
 import com.citic.guoan.dvb.partitioner.ViewerIdPartitioner
-import org.apache.hadoop.io.compress.BZip2Codec
-import org.apache.spark.sql.SQLContext
+import org.apache.hadoop.io.compress.{GzipCodec}
 import org.apache.spark.{SparkConf, SparkContext}
 
 /**
@@ -15,8 +14,6 @@ object FilterData {
     conf.set("spark.serializer","org.apache.spark.serializer.KryoSerializer")
     conf.registerKryoClasses(Array(classOf[LIVE]))
     val sc = new SparkContext(conf)
-    val sqlContext = new SQLContext(sc)
-    import sqlContext.implicits._
 
     //过滤直播和心跳的数据,同时没有日期的和没有id标识的都过滤掉
     def filterFunc(line: Array[String]): Boolean = {
@@ -35,7 +32,7 @@ object FilterData {
       })
       .repartitionAndSortWithinPartitions(new ViewerIdPartitioner(args(2).toInt)) //重新分区并按UID和时间排序
       .map(f => f._2.uid + "\t" +f._2.date + "\t" +f._2.channel_name + "\t" +f._2.program_name)
-      .saveAsTextFile(args(1),classOf[BZip2Codec])
-//      .toDF().write.parquet(args(1)+"parquet")  //BZip压缩比是parquet两倍,40MB,前者压缩为4M,后者为8M
+      .saveAsTextFile(args(1),classOf[GzipCodec])
+//      .toDF().write.parquet(args(1)+"parquet")
   }
 }
