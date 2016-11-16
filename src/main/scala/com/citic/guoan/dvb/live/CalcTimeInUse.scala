@@ -21,6 +21,7 @@ object CalcTimeInUse {
       conf.registerKryoClasses(Array(classOf[LEFT_DATA],classOf[RIGHT_DATA]))
 
       val sc = new SparkContext(conf)
+      sc.setLogLevel("WARN")
       val sqlContext = new SQLContext(sc)
       import sqlContext.implicits._
 
@@ -29,7 +30,9 @@ object CalcTimeInUse {
       origin.cache()
 
       //去掉每个分区的第一行数据,用于配对相减
-      val pair = origin.mapPartitions(iter => iter.drop(1))
+//      val pair = origin.mapPartitions(iter => iter.drop(1))
+      val first = origin.first()
+      val pair = origin.filter(_!=first)
 
       val leftT = origin.zipWithIndex()
         .map(p => {
@@ -59,6 +62,9 @@ object CalcTimeInUse {
       leftT.registerTempTable("left_table")
       rightT.registerTempTable("right_table")
 
+//      leftT.show()
+//      rightT.show()
+
       val df = sqlContext.sql(
         """
         select a.uid,a.month,a.week,a.day,a.hour,a.channel_name,a.program_name,
@@ -67,6 +73,8 @@ object CalcTimeInUse {
          where a.row = b.row
            and a.uid = b.uid
         """.stripMargin)
+
+//      df.show()
 
       df.filter(df("time_in_use") >= 5 && df("time_in_use") <= 36000)  //去掉小于5秒和大于10小时的数据
         .registerTempTable("filter_result")
