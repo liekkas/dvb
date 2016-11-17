@@ -1,6 +1,5 @@
 package com.citic.guoan.dvb.live
 
-import org.apache.spark.sql.SQLContext
 import org.apache.spark.storage.StorageLevel
 import org.apache.spark.{SparkConf, SparkContext}
 import redis.clients.jedis.Jedis
@@ -9,7 +8,7 @@ import redis.clients.jedis.Jedis
   * Created by liekkas on 16/10/17.
   */
 object CalcUserNumByMonth {
-  case class LIVE_DATA(uid:String,month:Int,week:Int,day:String,time_in_use:Long)
+  case class LIVE_DATA(uid:String,month:Int)
 
   def main(args: Array[String]): Unit = {
     val jedis = new Jedis(args(3))
@@ -17,11 +16,10 @@ object CalcUserNumByMonth {
     conf.set("spark.serializer","org.apache.spark.serializer.KryoSerializer")
     conf.registerKryoClasses(Array(classOf[LIVE_DATA]))
     val sc = new SparkContext(conf)
-    val sqlContext = new SQLContext(sc)
 
     val liveData = sc.textFile(args(0))
       .map(_.split("	"))
-      .map(p => LIVE_DATA(p(0),p(1).toInt,p(2).toInt,p(3),p(7).toLong))
+      .map(p => LIVE_DATA(p(0),p(1).toInt))
     liveData.persist(StorageLevel.MEMORY_AND_DISK_SER)
 
     val TOTAL = "TOTAL"
