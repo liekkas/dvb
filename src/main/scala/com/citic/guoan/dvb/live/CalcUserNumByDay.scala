@@ -9,7 +9,7 @@ import redis.clients.jedis.Jedis
   * Created by liekkas on 16/10/17.
   */
 object CalcUserNumByDay {
-  case class LIVE_DATA(uid:String,day:String)
+  case class LIVE_DATA(uid:String,day:String,time_in_use:Long)
 
   def main(args: Array[String]): Unit = {
     val jedis = new Jedis(args(3))
@@ -20,7 +20,7 @@ object CalcUserNumByDay {
 
     val liveData = sc.textFile(args(0))
       .map(_.split("	"))
-      .map(p => LIVE_DATA(p(0),p(3)))
+      .map(p => LIVE_DATA(p(0),p(3),p(7).toInt))
     liveData.persist(StorageLevel.MEMORY_AND_DISK_SER)
 
     val TOTAL = "TOTAL"
@@ -41,8 +41,10 @@ object CalcUserNumByDay {
       println(">>> Process Live Day:" + day)
       val lastDay = DateFormatUtils.format(DateUtils.addDays(start, i-1),"yyyy-MM-dd")
 
-      liveData.filter(p => p.day == day)
-        .map(_.uid)
+      val data = liveData.filter(p => p.day == day)
+      data.persist(StorageLevel.MEMORY_AND_DISK_SER)
+
+      data.map(_.uid)
         .distinct()
         .foreachPartition(part => {
           val j = new Jedis(args(3))
@@ -51,6 +53,9 @@ object CalcUserNumByDay {
             j.sadd(TOTAL, uid)
           })
         })
+
+      //使用时长--分钟
+      val timeInUse = data.map(_.time_in_use).sum() / 60
 
       //用户数
       val userNum = jedis.smembers(day+DAY).size()
@@ -65,7 +70,7 @@ object CalcUserNumByDay {
 
       //最终结果保存到文本中,供后续计算使用
       val result = "day" + "\t" +day + "\t" + userNum + "\t" +
-        coverUserNum+"\t"+userInNum+"\t"+userOutNum+"\t"+lastUserNum
+        coverUserNum+"\t"+userInNum+"\t"+userOutNum+"\t"+lastUserNum+"\t"+"%.6f".format(timeInUse)
 
       jedis.sadd(RESULT,result)
       jedis.del(lastDay+DAY)

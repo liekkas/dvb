@@ -39,8 +39,10 @@ object CalcUserNumByWeek {
       println(">>> Process Live Week:" + week)
       val lastWeek = week - 1
 
-      liveData.filter(p => p.week == week)
-        .map(_.uid)
+      val data = liveData.filter(p => p.week == week)
+      data.persist(StorageLevel.MEMORY_AND_DISK_SER)
+
+      data.map(_.uid)
         .distinct()
         .foreachPartition(part => {
           val j = new Jedis(args(3))
@@ -49,6 +51,9 @@ object CalcUserNumByWeek {
             j.sadd(TOTAL, uid)
           })
         })
+
+      //使用时长--分钟
+      val timeInUse = data.map(_.time_in_use).sum() / 60
 
       //用户数
       val userNum = jedis.smembers(week+WEEK).size()
@@ -63,7 +68,7 @@ object CalcUserNumByWeek {
 
       //最终结果保存到文本中,供后续计算使用
       val result = "week" + "\t" +week + "\t" + userNum + "\t" +
-        coverUserNum+"\t"+userInNum+"\t"+userOutNum+"\t"+lastUserNum
+        coverUserNum+"\t"+userInNum+"\t"+userOutNum+"\t"+lastUserNum+"\t"+"%.6f".format(timeInUse)
 
       jedis.sadd(RESULT,result)
       jedis.del(lastWeek+WEEK)

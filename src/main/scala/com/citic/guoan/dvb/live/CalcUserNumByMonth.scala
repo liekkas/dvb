@@ -8,7 +8,7 @@ import redis.clients.jedis.Jedis
   * Created by liekkas on 16/10/17.
   */
 object CalcUserNumByMonth {
-  case class LIVE_DATA(uid:String,month:Int)
+  case class LIVE_DATA(uid:String,month:Int,time_in_use:Long)
 
   def main(args: Array[String]): Unit = {
     val jedis = new Jedis(args(3))
@@ -19,7 +19,7 @@ object CalcUserNumByMonth {
 
     val liveData = sc.textFile(args(0))
       .map(_.split("	"))
-      .map(p => LIVE_DATA(p(0),p(1).toInt))
+      .map(p => LIVE_DATA(p(0),p(1).toInt,p(7).toLong))
     liveData.persist(StorageLevel.MEMORY_AND_DISK_SER)
 
     val TOTAL = "TOTAL"
@@ -39,8 +39,10 @@ object CalcUserNumByMonth {
       println(">>> Process Live Month:" + month)
       val lastMonth = month - 1
 
-      liveData.filter(p => p.month == month)
-        .map(_.uid)
+      val data = liveData.filter(p => p.month == month)
+      data.persist(StorageLevel.MEMORY_AND_DISK_SER)
+
+      data.map(_.uid)
         .distinct()
         .foreachPartition(part => {
           val j = new Jedis(args(3))
@@ -49,6 +51,9 @@ object CalcUserNumByMonth {
             j.sadd(TOTAL, uid)
           })
         })
+
+      //使用时长--分钟
+      val timeInUse = data.map(_.time_in_use).sum() / 60
 
       //用户数
       val userNum = jedis.smembers(month+MONTH).size()
@@ -63,7 +68,7 @@ object CalcUserNumByMonth {
 
       //最终结果保存到文本中,供后续计算使用
       val result = "month" + "\t" +month + "\t" + userNum + "\t" +
-        coverUserNum+"\t"+userInNum+"\t"+userOutNum+"\t"+lastUserNum
+        coverUserNum+"\t"+userInNum+"\t"+userOutNum+"\t"+lastUserNum+"\t"+"%.6f".format(timeInUse)
 
       jedis.sadd(RESULT,result)
       jedis.del(lastMonth+MONTH)
