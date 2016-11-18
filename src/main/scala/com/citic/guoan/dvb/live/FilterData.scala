@@ -16,8 +16,12 @@ object FilterData {
     val sc = new SparkContext(conf)
 
     //过滤直播和心跳的数据,同时没有日期的和没有id标识的都过滤掉
+    //过滤掉日期格式不正常的(不足14位数),和用户id不正常的(不足6位数)
+    //过滤掉日期不再20164月到9月之间的数据
     def filterFunc(line: Array[String]): Boolean = {
-      line(0) == "0201|0999|01" && line(1) != "" && line(2) != "" && line.length >= 9
+      line.length >= 9 && line(0) == "0201|0999|01" && line(1) != "" && line(2) != "" &&
+        line(1).length == 14 && line(2).length > 6 &&
+          line(1).substring(0,6).toInt > 201603 && line(1).substring(0,6).toInt < 201610
     }
 
     sc.textFile(args(0))
