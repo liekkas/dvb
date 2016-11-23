@@ -9,4 +9,4 @@
 /Users/liekkas/IdeaProjects/asiainfo/scala/dvb/data/demand \
 2016-04-01 \
 2016-09-30 \
-1000
+10000

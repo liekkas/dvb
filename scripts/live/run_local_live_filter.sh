@@ -3,6 +3,6 @@
 --class com.citic.guoan.dvb.live.FilterData \
 --master local[4] \
 /Users/liekkas/IdeaProjects/asiainfo/scala/dvb/target/dvb-0.0.1-SNAPSHOT.jar \
-/Users/liekkas/IdeaProjects/asiainfo/scala/dvb/data/live/test/crabdata \
-/Users/liekkas/IdeaProjects/asiainfo/scala/dvb/data/live/test/filtered \
-5
+/Users/liekkas/IdeaProjects/asiainfo/scala/dvb/data/live/test2/crabdata \
+/Users/liekkas/IdeaProjects/asiainfo/scala/dvb/data/live/test2/filtered \
+2

@@ -9,4 +9,4 @@
 /Users/liekkas/IdeaProjects/asiainfo/scala/dvb/data/demand/demandByWeekUnfixed \
 201614 \
 201640 \
-1000
+10000
