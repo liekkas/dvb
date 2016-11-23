@@ -7,7 +7,7 @@ import redis.clients.jedis.Jedis
 /**
   * Created by liekkas on 16/10/17.
   */
-object CalcUserNumByWeek {
+object CalcPrepareSumByWeek {
   case class LIVE_DATA(uid:String,week:Int,time_in_use:Long)
 
   def main(args: Array[String]): Unit = {

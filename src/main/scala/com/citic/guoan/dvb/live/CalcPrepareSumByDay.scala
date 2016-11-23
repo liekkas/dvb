@@ -8,12 +8,12 @@ import redis.clients.jedis.Jedis
 /**
   * Created by liekkas on 16/10/17.
   */
-object CalcUserNumByDay {
+object CalcPrepareSumByDay {
   case class LIVE_DATA(uid:String,day:String,time_in_use:Long)
 
   def main(args: Array[String]): Unit = {
     val jedis = new Jedis(args(3))
-    val conf = new SparkConf().setAppName("CalcUserNumByDay")
+    val conf = new SparkConf().setAppName("CalcPrepareSumByDay")
     conf.set("spark.serializer","org.apache.spark.serializer.KryoSerializer")
     conf.registerKryoClasses(Array(classOf[LIVE_DATA]))
     val sc = new SparkContext(conf)

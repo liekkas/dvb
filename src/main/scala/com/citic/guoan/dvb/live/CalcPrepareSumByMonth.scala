@@ -7,7 +7,7 @@ import redis.clients.jedis.Jedis
 /**
   * Created by liekkas on 16/10/17.
   */
-object CalcUserNumByMonth {
+object CalcPrepareSumByMonth {
   case class LIVE_DATA(uid:String,month:Int,time_in_use:Long)
 
   def main(args: Array[String]): Unit = {
