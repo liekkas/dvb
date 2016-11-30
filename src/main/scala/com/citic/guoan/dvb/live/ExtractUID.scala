@@ -22,8 +22,8 @@ object ExtractUID {
       })
 
     val result = initData
-      .filter(p => p(1) == args(2) || p(1) == args(3))
-      .map(_(0)).distinct().take(args(1).toInt)
+      .filter(p => p(1) == args(3) || p(1) == args(4))
+      .map(_(0)).distinct().take(args(2).toInt)
 
     sc.makeRDD(result).map(_.mkString).repartition(1).saveAsTextFile(args(1))
   }
