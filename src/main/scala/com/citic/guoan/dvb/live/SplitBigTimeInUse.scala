@@ -9,10 +9,10 @@ import org.apache.spark.{SparkConf, SparkContext}
 /**
   * Created by liekkas on 16/10/26.
   */
-object FilterTimeInUseExceedAnHourData {
+object SplitBigTimeInUse {
   case class LIVE(uid:String,date:String,channel_name:String,program_name:String)
   def main(args: Array[String]): Unit = {
-    val conf = new SparkConf().setAppName("FilterTimeInUseExceedAnHourData")
+    val conf = new SparkConf().setAppName("SplitBigTimeInUse")
     val sc = new SparkContext(conf)
 
     sc.textFile(args(0))
@@ -35,10 +35,7 @@ object FilterTimeInUseExceedAnHourData {
             val week = dateStr.substring(0,4) + (if(weekOfYear>9) weekOfYear else "0"+weekOfYear)
             val timeUse = if(span < spans-1) 3600 else (timeInUse - 3600 * span)
             result += p(0) + "\t" + month + "\t" + week + "\t" + day + "\t" +
-              hour + "\t" + p(5) + "\t" + p(6) + "\t" + timeUse
-            if(span < spans-1) {
-              result += "\n"
-            }
+              hour + "\t" + p(5) + "\t" + p(6) + "\t" + timeUse + "\n"
           })
           result
         } else {
@@ -47,7 +44,7 @@ object FilterTimeInUseExceedAnHourData {
         }
       })
       .coalesce(args(2).toInt)
-      .saveAsTextFile(args(1),classOf[GzipCodec])
 //      .saveAsTextFile(args(1))
+      .saveAsTextFile(args(1),classOf[GzipCodec])
   }
 }
