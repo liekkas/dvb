@@ -12,7 +12,7 @@ object CalcPrepareSumByWeek {
 
   def main(args: Array[String]): Unit = {
     val jedis = new Jedis(args(3))
-    val conf = new SparkConf().setAppName("CalcUserNumByWeek")
+    val conf = new SparkConf().setAppName("CalcPrepareSumByWeek")
     conf.set("spark.serializer","org.apache.spark.serializer.KryoSerializer")
     conf.registerKryoClasses(Array(classOf[LIVE_DATA]))
     val sc = new SparkContext(conf)
