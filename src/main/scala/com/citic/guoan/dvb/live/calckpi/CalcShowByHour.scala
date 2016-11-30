@@ -98,6 +98,6 @@ object CalcShowByHour {
       "%.4f".format(f(6)) + "\t" + "%.4f".format(f(7)) + "\t" + f(8) + "\t" + "%.4f".format(f(9)) + "\t" + f(10)
     )
 
-    showResult.coalesce(1).saveAsTextFile(args(3)+"/show")
+    showResult.repartition(1).saveAsTextFile(args(3)+"/show")
   }
 }
