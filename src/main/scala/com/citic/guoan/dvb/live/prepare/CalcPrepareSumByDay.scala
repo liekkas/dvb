@@ -12,14 +12,15 @@ object CalcPrepareSumByDay {
   case class LIVE_DATA(uid:String,day:String,time_in_use:Long)
 
   def main(args: Array[String]): Unit = {
-    val jedis = new Jedis(args(3))
+    val jedis = new Jedis(args(2))
     val conf = new SparkConf().setAppName("CalcPrepareSumByDay")
     conf.set("spark.serializer","org.apache.spark.serializer.KryoSerializer")
     conf.registerKryoClasses(Array(classOf[LIVE_DATA]))
     val sc = new SparkContext(conf)
 
     val liveData = sc.textFile(args(0))
-      .map(_.split("	"))
+      .filter(_ != "")
+      .map(_.split("\t"))
       .map(p => LIVE_DATA(p(0),p(3),p(7).toInt))
     liveData.persist(StorageLevel.MEMORY_AND_DISK_SER)
 
