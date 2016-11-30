@@ -46,7 +46,7 @@ object CalcPrepareSumByMonth {
       data.map(_.uid)
         .distinct()
         .foreachPartition(part => {
-          val j = new Jedis(args(3))
+          val j = new Jedis(args(2))
           part.foreach(uid => {
             j.sadd(month+MONTH, uid)
             j.sadd(TOTAL, uid)

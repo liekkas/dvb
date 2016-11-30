@@ -48,7 +48,7 @@ object CalcPrepareSumByDay {
       data.map(_.uid)
         .distinct()
         .foreachPartition(part => {
-          val j = new Jedis(args(3))
+          val j = new Jedis(args(2))
           part.foreach(uid => {
             j.sadd(day+DAY, uid)
             j.sadd(TOTAL, uid)
