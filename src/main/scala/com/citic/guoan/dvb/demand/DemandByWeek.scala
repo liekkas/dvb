@@ -24,6 +24,7 @@ object DemandByWeek {
     val data = sc.textFile(args(0))
       .map(_.split("	")).filter(p => (p(5) >= args(4) && p(5) <= args(5))) //统计指定时间范围内的数据
       .map(p => DEMAND_DATA(p(0),p(5).toInt,p(1).toLong,p(3))).toDF()
+      .distinct()
     val showDict = sc.textFile(args(1))
       .map(_.split("	")).map ( p =>  SHOW_DICT(p(0),p(1))).toDF()
 
