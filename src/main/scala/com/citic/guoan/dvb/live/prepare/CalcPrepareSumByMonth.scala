@@ -1,4 +1,4 @@
-package com.citic.guoan.dvb.live
+package com.citic.guoan.dvb.live.prepare
 
 import org.apache.spark.storage.StorageLevel
 import org.apache.spark.{SparkConf, SparkContext}
