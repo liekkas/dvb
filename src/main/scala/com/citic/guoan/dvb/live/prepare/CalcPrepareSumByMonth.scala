@@ -20,7 +20,6 @@ object CalcPrepareSumByMonth {
     val liveData = sc.textFile(args(0))
       .filter(_ != "")
       .map(_.split("\t"))
-      .distinct()
       .map(p => LIVE_DATA(p(0),p(1).toInt,p(7).toLong))
     liveData.persist(StorageLevel.MEMORY_AND_DISK_SER)
 

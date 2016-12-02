@@ -34,6 +34,7 @@ object FilterLiveData {
         val program = if(p(8)=="" || p(8)=="null") "?" else p(8)
         (p(2)+","+p(1),LIVE(p(2),p(1),channelFixed,program))
       })
+      .distinct() //去重
       //重新分区不排序 因为后面要和关机信息组合,还要进行一次排序,这里就不浪费时间了
       .partitionBy(new ViewerIdPartitioner(args(2).toInt))
 //      .repartitionAndSortWithinPartitions(new ViewerIdPartitioner(args(2).toInt)) //重新分区并按UID和时间排序
