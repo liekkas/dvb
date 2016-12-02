@@ -21,6 +21,7 @@ object CalcPrepareSumByDay {
     val liveData = sc.textFile(args(0))
       .filter(_ != "")
       .map(_.split("\t"))
+      .distinct()
       .map(p => LIVE_DATA(p(0),p(3),p(7).toInt))
     liveData.persist(StorageLevel.MEMORY_AND_DISK_SER)
 
@@ -46,7 +47,6 @@ object CalcPrepareSumByDay {
       data.persist(StorageLevel.MEMORY_AND_DISK_SER)
 
       data.map(_.uid)
-        .distinct()
         .foreachPartition(part => {
           val j = new Jedis(args(2))
           part.foreach(uid => {
