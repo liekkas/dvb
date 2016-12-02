@@ -20,14 +20,15 @@ object CalcShowByHour {
     val sqlContext = new SQLContext(sc)
     import sqlContext.implicits._
     val data = sc.textFile(args(0))
-      .map(_.split("	")).filter(p => (p(3) >= args(4) && p(3) <= args(5))) //统计指定时间范围内的数据
+      .filter(_ != "")
+      .map(_.split("\t")).filter(p => (p(3) >= args(4) && p(3) <= args(5))) //统计指定时间范围内的数据
       .map(p => ORIGIN_DATA(p(0),p(3),p(4).toInt,p(7).toLong,p(5),p(6))).toDF()
     val channelDict = sc.textFile(args(1))
-      .map(_.split("	")).map ( p =>  CHANNEL_DICT(p(0),p(1))).toDF()
+      .map(_.split("\t")).map ( p =>  CHANNEL_DICT(p(0),p(1))).toDF()
 
     //已统计数据
     val prepareSum = sc.textFile(args(2))
-      .map(_.split("	")).filter(p => p(0) == "day")
+      .map(_.split("\t")).filter(p => p(0) == "day")
       .map ( p => PREPARE_SUM(p(1),p(3).toLong)).toDF()
 
     //加入频道类型 - 当做原始表看待
@@ -93,6 +94,7 @@ object CalcShowByHour {
                hour,
                show_name
           from group_by_show_result
+         order by user_index desc
       """.stripMargin)
     .map(f => f(0) + "\t" + f(11) + "\t" + f(12) + "\t" + f(1) + "\t" + f(2)+ "\t" +
       "%.4f".format(f(3)) + "\t" + "%.4f".format(f(4)) + "\t" + "%.4f".format(f(5)) + "\t" +
