@@ -1,4 +1,4 @@
-package com.citic.guoan.dvb.live
+package com.citic.guoan.dvb.live.test
 
 import org.apache.spark.{SparkConf, SparkContext}
 

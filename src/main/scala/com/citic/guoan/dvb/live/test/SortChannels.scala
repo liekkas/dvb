@@ -1,7 +1,6 @@
-package com.citic.guoan.dvb.live
+package com.citic.guoan.dvb.live.test
 
 import scala.io.Source
-import scala.util.Sorting
 
 /**
   * Created by liekkas on 16/11/17.
