@@ -120,7 +120,7 @@ object DemandByHour {
       s"""
         select day,hour,show_type,
                show_time_in_use/${FIX_TIME}/cover_user_num*${USER_INDEX_OFFSET} as user_index,
-               show_user_num *1.0/user_num as cover_pct,
+               show_user_num *1.0/cover_user_num as cover_pct,
                show_time_in_use/time_in_use as market_pct,
                show_time_in_use/show_user_num as time_in_use_avg,
                show_time_in_use,
@@ -170,7 +170,7 @@ object DemandByHour {
       s"""
         select day,hour,show_name,show_type,
                show_time_in_use/${FIX_TIME}/cover_user_num*${USER_INDEX_OFFSET} as user_index,
-               show_user_num*1.0/user_num as cover_pct,
+               show_user_num*1.0/cover_user_num as cover_pct,
                show_time_in_use/time_in_use as market_pct,
                show_time_in_use/show_user_num as time_in_use_avg,
                show_time_in_use,
