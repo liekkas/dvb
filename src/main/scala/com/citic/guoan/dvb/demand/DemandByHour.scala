@@ -81,9 +81,13 @@ object DemandByHour {
           from group_by_date
       """.stripMargin
     )
-    summaryResult.map(f => f(0) + "\t" + f(1) + "\t" + 2 + "\t" + f(2) + "\t" +
-      "%.4f".format(f(3)) + "\t" + "%.4f".format(f(4)) + "\t" + "%.4f".format(f(5)) + "\t" +
-      f(6) + "\t" + "%.4f".format(f(7))+ "\t" + "%.4f".format(f(8)))
+    summaryResult.map(f => {
+      val requestOne = if(f(8) != null) "%.4f".format(f(8)).toFloat else 0
+      val rone = if(requestOne > 60) 60 else requestOne
+      f(0) + "\t" + f(1) + "\t" + 2 + "\t" + f(2) + "\t" +
+        "%.4f".format(f(3)) + "\t" + "%.4f".format(f(4)) + "\t" + "%.4f".format(f(5)) + "\t" +
+        f(6) + "\t" + "%.4f".format(f(7))+ "\t" + rone
+    })
         .repartition(1).saveAsTextFile(args(3)+"/demandByHour/summary")
     println(">>> Complete DemandByHour::Summary!")
 
